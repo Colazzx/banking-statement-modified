@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec 19 15:36:56 2024
+Modified on Mon May 25 12:00:00 2025
 
-@author: Audric
+@author: Caleb and Audric
+
+New feature: crossout detection
 """
 import streamlit as st
 import pandas as pd
 import os
 from main import extract_tables_from_pdf
 from postprocessing import postprocessing
+# from crossout_detection import detect_red_markings_in_image, identify_crossed_out_rows, extract_table_with_visual_analysis
 import tempfile
 
 def process_pdf(pdf_path, output_path, page_numbers=None):
@@ -18,6 +22,7 @@ def process_pdf(pdf_path, output_path, page_numbers=None):
 
         # Post-process the tables
         combined_df, other_tables = postprocessing(tables)
+    
 
         # Save to Excel
         with pd.ExcelWriter(output_path) as writer:

@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec 19 15:39:51 2024
+Modified on Mon May 25
 
-@author: Audric
+@author: Caleb and Audric
+
+New feature: crossout detection
 """
 import pandas as pd
 
@@ -40,27 +43,30 @@ def debet_kredit_process(combined_df):
                 combined_df.at[idx, 'KREDIT'] = 0
     return combined_df
 
+def is_float(val):
+    try:
+        float(str(val).replace(',', '').strip())
+        return True
+    except ValueError:
+        return False
+
 def string_number_process(combined_df):
-    # Loop through each row and process the Debet and Kredit columns
     for idx, row in combined_df.iterrows():
         Debet = row['Debet']
         Kredit = row['Kredit']
         Saldo = row['Saldo']
 
-        # Convert Debet and Kredit values to float if they are not NaN or None
-        if pd.notna(Debet):
-            # Remove commas, strip spaces, and convert to float
+        if pd.notna(Debet) and is_float(Debet):
             combined_df.at[idx, 'Debet'] = float(str(Debet).replace(',', '').strip())
-        
-        if pd.notna(Kredit):
-            # Remove commas, strip spaces, and convert to float
+
+        if pd.notna(Kredit) and is_float(Kredit):
             combined_df.at[idx, 'Kredit'] = float(str(Kredit).replace(',', '').strip())
-        
-        if pd.notna(Saldo):
-            # Remove commas, strip spaces, and convert to float
+
+        if pd.notna(Saldo) and is_float(Saldo):
             combined_df.at[idx, 'Saldo'] = float(str(Saldo).replace(',', '').strip())
 
     return combined_df
+
 
 def clean_dataframe(df):
     """
@@ -77,12 +83,13 @@ def clean_dataframe(df):
     """
     # Step 1: Remove rows that contain unwanted text
     unwanted_phrases = [
-        "Currency",
-        "Halaman",  # Covers "Halaman X dari Y"
-        "Page",     # Covers "Page X of Y"
-        "Tanggal Transaksi",
-        "Transaction Date"
+    "Currency", "Halaman", "Page",
+    "Tanggal Transaksi", "Transaction Date",
+    "Uraian Transaksi", "Transaction Description",
+    "Debet", "Debit", "Kredit", "Credit", "Saldo", "Balance",
+    "Teller", "User ID"
     ]
+
     df = df[~df.apply(lambda row: row.astype(str).str.contains('|'.join(unwanted_phrases), case=False, na=False).any(), axis=1)]
 
     # Step 2: Reset the index
@@ -170,6 +177,28 @@ def combine_adjacent_columns(df, target_columns):
     # Step 4: Return the modified DataFrame
     return df
 
+def remove_text_marked_rows(df, marker_keywords=None, debug=False):
+    if marker_keywords is None:
+        marker_keywords = ["#x", "x!", "!!", "❌"]
+
+    def row_contains_marker(row):
+        for cell in row:
+            if cell is None:
+                continue
+            text = str(cell).replace('\n', '').replace('\r', '').replace('\xa0', '').strip().lower()
+            for kw in marker_keywords:
+                if kw in text:
+                    return True
+        return False
+
+    # 💬 Optional debug logging
+    if debug:
+        print("🔍 Removed rows:")
+        print(df[df.apply(row_contains_marker, axis=1)])
+
+    filtered_df = df[~df.apply(row_contains_marker, axis=1)].reset_index(drop=True)
+    return filtered_df
+
 def postprocessing(tables):
     """
     Perform post-processing on the extracted tables and combine only those that have the specified columns.
@@ -189,154 +218,107 @@ def postprocessing(tables):
     def table_to_dataframe(table):
         """
         Convert a Table object to a pandas DataFrame if necessary.
-
-        Args:
-        - table: A raw table object (could be a DataFrame or a custom table object).
-
-        Returns:
-        - A pandas DataFrame.
         """
         if isinstance(table, pd.DataFrame):
-            return table  # Already a DataFrame, no conversion needed
+            return table
 
-        # Handle common table object formats
-        if hasattr(table, "df"):  # Camelot or similar
-            return table.df  # Extract as a DataFrame directly
+        if hasattr(table, "df"):
+            return table.df
 
-        if isinstance(table, list):  # Handle lists of lists (Tabula or similar)
+        if isinstance(table, list):
             if all(isinstance(row, list) for row in table):
-                return pd.DataFrame(table)  # Convert list of lists to DataFrame
+                return pd.DataFrame(table)
 
-        # If none of the above work, raise an error
         raise ValueError(f"Unsupported table format: {type(table)}")
 
     def combine_partial_rows(df, date_col='TANGGAL', cbg_col='CBG', mutasi_col='MUTASI', saldo_col='SALDO', keterangan_col='KETERANGAN'):
-        """
-        Combines rows with filled 'keterangan_col' but empty other columns
-        into the nearest valid row above where other columns are filled.
-
-        Parameters:
-        df (pd.DataFrame): The input DataFrame.
-        keterangan_col (str): The name of the 'KETERANGAN' column.
-
-        Returns:
-        pd.DataFrame: The modified DataFrame with combined 'keterangan_col' values.
-        """
-        # Replace all empty string values "" or " " with NaN
         df = df.replace(["", " "], pd.NA)
-
-        # Get the list of columns to check for "empty" (all except keterangan_col)
         other_cols = [col for col in df.columns if col != keterangan_col]
 
         for i in range(len(df)):
-            # Check if the row is empty except for 'keterangan_col'
             is_empty = all(pd.isna(df.loc[i, col]) for col in other_cols)
-
             if is_empty:
-                # Find the nearest row with valid values in 'other_cols'
                 nearest_idx = None
-
-                # Search above for the nearest valid row
                 for j in range(i - 1, -1, -1):
                     if all(pd.notna(df.loc[j, col]) for col in other_cols):
                         nearest_idx = j
                         break
-
-                # If no valid row above, search below
                 if nearest_idx is None:
                     for j in range(i + 1, len(df)):
                         if all(pd.notna(df.loc[j, col]) for col in other_cols):
                             nearest_idx = j
                             break
-
-                # Combine 'keterangan_col' with the nearest valid row
                 if nearest_idx is not None:
                     df.loc[nearest_idx, keterangan_col] = (
                         str(df.loc[nearest_idx, keterangan_col]).strip() + " " + str(df.loc[i, keterangan_col]).strip()
                     ).strip()
-                    # Clear the current row's 'keterangan_col' as it has been merged
                     df.loc[i, keterangan_col] = None
 
-        # Remove rows where the 'is_empty' condition is True
         df = df[~df.apply(lambda row: all(pd.isna(row[col]) for col in other_cols), axis=1)]
+        return df.reset_index(drop=True)
 
-        # Reset index for cleanliness
-        df = df.reset_index(drop=True)
+    def fix_row(df):
+        df = df.replace(["", " "], pd.NA)
+        is_main_row = df['TANGGAL'].notna() | df['CBG'].notna() | df['SALDO'].notna()
+        df['group'] = is_main_row.cumsum()
+        df.columns = [col.replace(" ", "") for col in df.columns]
+
+        fixed_df = df.groupby('group', as_index=False).apply(lambda g: pd.Series({
+            'TANGGAL': g['TANGGAL'].iloc[0],
+            'KETERANGAN': ' '.join(g['KETERANGAN'].dropna()).strip(),
+            'CBG': g['CBG'].iloc[0],
+            'MUTASI': g['MUTASI'].iloc[0],
+            'SALDO': g['SALDO'].iloc[0],
+        }))
+
+        return fixed_df.drop(columns='group', errors='ignore').reset_index(drop=True)
+
+    def reformat_dataframe(df):
+        def normalize_text(text):
+            return "".join(text.split()).lower() if isinstance(text, str) else ""
+
+        tanggal_row_idx = df.apply(
+            lambda row: row.apply(normalize_text).isin(["tanggal", "tanggaltransaksi"]).any(), axis=1
+        ).idxmax()
+
+        if df.iloc[tanggal_row_idx].apply(normalize_text).isin(["tanggal", "tanggaltransaksi"]).any():
+            df.columns = df.iloc[tanggal_row_idx].fillna("").apply(lambda x: "".join(x.split()).strip())
+            df.columns = df.columns.to_series().replace({
+                "TanggalTransaksi": "Tanggal Transaksi",
+                "UraianTransaksi": "Uraian Transaksi"
+            })
+            df = df.iloc[tanggal_row_idx + 1:].reset_index(drop=True)
 
         return df
-    
-    def fix_row(df):
-        """
-        Combines rows with filled 'keterangan_col' but empty other columns
-        into the nearest valid row above where other columns are filled.
 
-        Parameters:
-        df (pd.DataFrame): The input DataFrame.
-        keterangan_col (str): The name of the 'KETERANGAN' column.
-
-        Returns:
-        pd.DataFrame: The modified DataFrame with combined 'keterangan_col' values.
-        """
-        # Replace all empty string values "" or " " with NaN
-        df = df.replace(["", " "], pd.NA)
-
-        # Create a flag to identify rows where TANGGAL or CBG is present (actual rows)
-        is_main_row = df['TANGGAL'].notna() | df['CBG'].notna() | df['SALDO'].notna()
-        
-        # Forward-fill the main rows to associate all subsequent sub-rows
-        df['group'] = is_main_row.cumsum()
-        
-        # Group by the identified groups and merge KETERANGAN
-        df.columns = [col.replace(" ", "") for col in df.columns]
-        fixed_df = df.groupby('group', as_index=False).apply(lambda g: pd.Series({
-            'TANGGAL': g['TANGGAL'].iloc[0],  # Keep the first TANGGAL
-            'KETERANGAN': ' '.join(g['KETERANGAN'].dropna()).strip(),  # Merge KETERANGAN
-            'CBG': g['CBG'].iloc[0],  # Keep the first CBG
-            'MUTASI': g['MUTASI'].iloc[0],  # Keep the first DEBET
-            'SALDO': g['SALDO'].iloc[0],  # Keep the first SALDO
-        }))
-        
-        # Drop the temporary 'group' column
-        fixed_df = fixed_df.drop(columns='group', errors='ignore')
-        return fixed_df.reset_index(drop=True)
-
-    # Process each table in the tables list
     for table in tables:
-        # Convert Table object to DataFrame if necessary
         df = table_to_dataframe(table)
         check = reformat_dataframe(df)
-        
+
         if isinstance(check.columns[0], str) and check.columns[0].strip().upper() == "TANGGAL":
             check.columns = [col.replace(" ", "") for col in check.columns]
 
-        # Check for the required columns of the old format
         if all(col in check.columns for col in required_columns_old):
             df.columns = [col.replace(" ", "") for col in df.columns]
-            # Apply reformatting and combination for the old table format
             df = reformat_dataframe(df)
+            df = remove_text_marked_rows(df, debug=True) # 🚨 EARLY FILTER
             df = combine_adjacent_columns(df, ["KETERANGAN", "MUTASI"])
-            df = fix_row(df)  # Combine partial rows
-
-            # Ensure the columns are in the correct order
+            df = fix_row(df)
             df = df[required_columns_old]
 
-            # Append the processed table to the combined DataFrame
             combined_df = pd.concat([combined_df, df], ignore_index=True)
             combined_df = debet_kredit_process(combined_df)
 
-        # Check for the required columns of the new format
         elif all(col in check.columns for col in required_columns_new):
-            # For the new table format, no reformatting, just append it as is
             df = df[required_columns_new]
+            df = remove_text_marked_rows(df, debug=True)  # 🚨 EARLY FILTER
             df = combine_partial_rows(df, keterangan_col='Uraian Transaksi')
 
-            # Append the processed table to the combined DataFrame
             combined_df = pd.concat([combined_df, df], ignore_index=True)
             combined_df = clean_dataframe(combined_df)
             combined_df = string_number_process(combined_df)
 
         else:
-            # Append unprocessed tables to other_tables
             other_tables.append(df)
 
     return combined_df, other_tables

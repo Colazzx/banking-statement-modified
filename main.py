@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec 19 15:52:16 2024
+Modified on Mon May 25
 
-@author: Audric
+@author: Caleb and Audric
+
+New feature: crossout detection
 """
 import subprocess
 import os
