@@ -37,7 +37,7 @@ def process_pdf(pdf_path, output_path, page_numbers=None):
 
 
 # Streamlit App
-st.title("Extract Tables from PDFs")
+st.title("Mini OCR for Banking Statement")
 
 # File uploader
 input_pdf = st.file_uploader("Upload PDF here", type="pdf")
