@@ -3,7 +3,7 @@
 Created on Thu Dec 19 15:36:56 2024
 Modified on Mon May 25 12:00:00 2025
 
-@author: Caleb and Audric
+@author: Caleb and Aul
 
 New feature: crossout detection
 """
@@ -37,7 +37,7 @@ def process_pdf(pdf_path, output_path, page_numbers=None):
 
 
 # Streamlit App
-st.title("Mini OCR for Banking Statement")
+st.title("SME OCR Prototype")
 
 # File uploader
 input_pdf = st.file_uploader("Upload PDF here", type="pdf")
