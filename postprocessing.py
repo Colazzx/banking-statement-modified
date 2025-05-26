@@ -3,7 +3,7 @@
 Created on Thu Dec 19 15:39:51 2024
 Modified on Mon May 25
 
-@author: Caleb and Audric
+@author: Caleb and Aul
 
 New feature: crossout detection
 """
