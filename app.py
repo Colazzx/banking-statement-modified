@@ -37,7 +37,7 @@ def process_pdf(pdf_path, output_path, page_numbers=None):
 
 
 # Streamlit App
-st.title("SME OCR Prototype")
+st.title("SME Data Extraction Prototype")
 
 # File uploader
 input_pdf = st.file_uploader("Upload PDF here", type="pdf")
